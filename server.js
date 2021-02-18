@@ -12,23 +12,32 @@ app.get('/', function(req, res) {
   res.sendFile(path.join(__dirname + '/index.html'))
 })
 
-app.post('/upload-video', function(req, res) {
+app.post('/upload-video', function(req, res, next) {
   const formData = new formidable.IncomingForm();
   formData.maxFileSize = 1000 * 1024 * 1024;
   formData.parse(req, function(error, fields, files){
-    const oldPathVideo = files.video.path;
-    const newPath = "assets/videos/" + new Date().getTime() + "-" + files.video.name;
-    mv(oldPathVideo, newPath, function(err) {
-      console.log('checking error: ', error);
-      if (err) { throw err; }
-        res.json({
-          "status": "200",
-          "message": "Successfully uploaded!",
-          "videoUrl": newPath,
-        });
-  });
+    if(error){
+      next(error);
+    }
+    if( !files.video || files.video.size === 0 ){
+      const customError = new Error('Video not found!');
+      customError.statusCode = 401;
+      next(customError);
+    }
+    if( files.video && files.video.path && files.video.size > 0){
+      const oldPathVideo = files.video.path;
+      const newPath = "assets/videos/" + new Date().getTime() + "-" + files.video.name;
+      mv(oldPathVideo, newPath, function(err) {
+        if (err) {  next(err); }
+          res.json({
+            "status": "200",
+            "message": "Successfully uploaded!",
+            "videoUrl": newPath,
+          });
+      });
+    }
+   
     // fs.rename(oldPathVideo, newPath, function(error){
-    //   console.log('checking error: ', error);
     //   if(!error){
     //     res.json({
 		// 			"status": "200",
@@ -41,10 +50,15 @@ app.post('/upload-video', function(req, res) {
 })
 
 
-app.delete('/delete-video', function(req, res) {
+app.delete('/delete-video', function(req, res, next) {
   const path = req.query.videoUrl;
+  if( !path){
+    const customError = new Error("videoUrl is missing!");
+    customError.statusCode = 401;
+    next(customError);
+  }
   fs.unlink(path, function (err) {
-    if (err) throw err;
+    if (err) next(err);
     else{
       res.json({
         "status": "200",
@@ -58,6 +72,11 @@ app.delete('/delete-video', function(req, res) {
 app.get('/play-video', function(req, res) {
   // const path = 'assets/sample.mp4'
   const path = req.query.videoUrl;
+  if( !path){
+    const customError = new Error("videoUrl is missing!");
+    customError.statusCode = 401;
+    next(customError);
+  }
   const stat = fs.statSync(path)
   const fileSize = stat.size
   const range = req.headers.range
@@ -94,6 +113,17 @@ app.get('/play-video', function(req, res) {
     fs.createReadStream(path).pipe(res)
   }
 })
+
+
+//Catching error and setting variable in response of the request
+app.use((error, req, res, next) => {
+  const status = error.statusCode || 500;
+  const message = error.message;
+  const data = error.data;
+  res.status(status).json({ message: message,  error: true, data: data });
+});
+
+
 app.listen(process.env.PORT || 3000, function () {
-  console.log(`Listening on port ${process.env.PORT || 5000}`)
+  console.log(`Listening on port ${process.env.PORT || 3000}`)
 })
